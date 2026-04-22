@@ -1,0 +1,28 @@
+TOTAL PARAGRAPHS: 26
+
+[1] APPENDICES
+[2] Appendix A — Full Technology Stack
+[3] Table A.1 — Backend Dependencies (Exact Versions)
+[4] Table A.2 — Frontend Dependencies (Exact Versions)
+[5] Appendix B — Complete Database Schema (30 Tables)
+[6] Table B.1 — Reference / Lookup Tables (seeded at startup)
+[7] Table B.2 — System & Security Tables
+[8] Table B.3 — Core DORA Domain Tables
+[9] Appendix C — Complete API Route Map
+[10] Table C.1 — All API Endpoints (versioned under /api/v1)
+[11] Appendix D — DORA Article to Implementation Mapping
+[12] Table D.1 — Full DORA Article Coverage
+[13] Appendix E — EBA Validation Rule Coverage
+[14] Table E.1 — Rule Count by Template
+[15] Table E.2 — Rule Count by Type
+[16] Table E.3 — Rule Count by Severity
+[17] Table E.4 — Coverage vs. Full EBA Specification
+[18] Appendix F — EBA Template Export Coverage
+[19] Table F.1 — All 13 Sub-Templates Supported
+[20] Appendix G — Security Architecture Summary
+[21] Table G.1 — Security Controls and DORA Alignment
+[22] Appendix H — Implementation Timeline
+[23] Table H.1 — Development Session History (17 March – 19 April 2026)
+[24] Appendix I — Known Limitations and Future Work
+[25] Table I.1 — Documented Platform Limitations
+[26] Table I.2 — Future Work Scope

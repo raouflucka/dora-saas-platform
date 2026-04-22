@@ -1,0 +1,628 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// REFERENCE / LOOKUP TABLES
+// ─────────────────────────────────────────────────────────────
+
+model Country {
+  code                           String                   @id @db.Char(2)
+  name                           String                   @db.VarChar(100)
+  branches                       Branch[]
+  contractualArrangementsGovLaw  ContractualArrangement[] @relation("GovLawCountry")
+  contractualArrangementsProc    ContractualArrangement[] @relation("ProcCountry")
+  contractualArrangementsSvc     ContractualArrangement[] @relation("SvcCountry")
+  contractualArrangementsStorage ContractualArrangement[] @relation("StorageCountry")
+  financialEntities              FinancialEntity[]
+  ictProviders                   IctProvider[]
+
+  @@map("countries")
+}
+
+model Currency {
+  code              String            @id @db.Char(3)
+  name              String?           @db.VarChar(50)
+  financialEntities FinancialEntity[]
+  ictProviders      IctProvider[]
+
+  @@map("currencies")
+}
+
+model EntityType {
+  id                Int               @id @default(autoincrement())
+  name              String            @unique @db.VarChar(100)
+  financialEntities FinancialEntity[]
+
+  @@map("entity_types")
+}
+
+model CriticalityLevel {
+  id                Int                @id @default(autoincrement())
+  levelName         String?            @unique @map("level_name") @db.VarChar(50)
+  businessFunctions BusinessFunction[]
+  ictServices       IctService[]
+
+  @@map("criticality_levels")
+}
+
+model RelianceLevel {
+  id                      Int                      @id @default(autoincrement())
+  levelName               String?                  @unique @map("level_name") @db.VarChar(50)
+  contractualArrangements ContractualArrangement[]
+
+  @@map("reliance_levels")
+}
+
+model DataSensitivityLevel {
+  id                      Int                      @id @default(autoincrement())
+  levelName               String?                  @unique @map("level_name") @db.VarChar(50)
+  contractualArrangements ContractualArrangement[]
+  ictServices             IctService[]
+
+  @@map("data_sensitivity_levels")
+}
+
+model Notification {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  roleName  String?  @map("role_name") @db.VarChar(50) // e.g. "EDITOR" or "ANALYST"
+  title     String   @db.VarChar(255)
+  message   String
+  isRead    Boolean  @default(false) @map("is_read")
+  link      String?  @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("notifications")
+}
+
+model IctServiceType {
+  id                      Int                      @id @default(autoincrement())
+  name                    String                   @unique @db.VarChar(100)
+  description             String?
+  contractualArrangements ContractualArrangement[]
+  ictServices             IctService[]
+  supplyChains            IctSupplyChain[]
+
+  @@map("ict_service_types")
+}
+
+model ProviderPersonType {
+  id           Int           @id @default(autoincrement())
+  name         String?       @db.VarChar(50)
+  ictProviders IctProvider[]
+
+  @@map("provider_person_types")
+}
+
+model UserRole {
+  id       Int     @id @default(autoincrement())
+  roleName String? @unique @map("role_name") @db.VarChar(50)
+  users    User[]
+
+  @@map("user_roles")
+}
+
+// ─────────────────────────────────────────────────────────────
+// SYSTEM TABLES
+// ─────────────────────────────────────────────────────────────
+
+model Tenant {
+  id                      String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                    String                   @db.VarChar(255)
+  lei                     String?                  @unique @db.Char(20)
+  country                 String?                  @db.Char(2)
+  // EBA RT.01.01.0050 — the national competent authority supervising this entity
+  competentAuthority      String?                  @map("competent_authority") @db.VarChar(100)
+  createdAt               DateTime?                @default(now()) @map("created_at") @db.Timestamp(6)
+  auditLogs               AuditLog[]
+  branches                Branch[]
+  businessFunctions       BusinessFunction[]
+  contractualArrangements ContractualArrangement[]
+  financialEntities       FinancialEntity[]
+  ictProviders            IctProvider[]
+  ictServices             IctService[]
+  exitStrategies          ExitStrategy[]
+  ictServiceAssessments   IctServiceAssessment[]
+  validationRuns          ValidationRun[]
+  validationIssues        ValidationIssue[]
+  notifications           Notification[]
+  users                   User[]
+
+  @@map("tenants")
+}
+
+
+model User {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String         @map("tenant_id") @db.Uuid
+  email             String         @unique @db.VarChar(255)
+  passwordHash      String         @map("password_hash")
+  fullName          String?        @map("full_name") @db.VarChar(255)
+  roleId            Int            @map("role_id")
+  createdAt         DateTime?      @default(now()) @map("created_at") @db.Timestamp(6)
+  resetToken        String?        @map("reset_token")
+  resetTokenExpires DateTime?      @map("reset_token_expires")
+  // Refresh token — stored as bcrypt hash for server-side rotation + invalidation
+  refreshTokenHash  String?        @map("refresh_token_hash")
+  refreshTokenExpires DateTime?    @map("refresh_token_expires")
+  logs              AuditLog[]
+  comments          Comment[]
+  notifications     Notification[]
+  role              UserRole       @relation(fields: [roleId], references: [id])
+  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+
+  @@map("users")
+}
+
+model AuditLog {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  userId     String?   @map("user_id") @db.Uuid
+  actionType String?   @map("action_type") @db.VarChar(20)
+  tableName  String?   @map("table_name") @db.VarChar(100)
+  recordId   String?   @map("record_id") @db.Uuid
+  oldValues  Json?     @map("old_values")
+  newValues  Json?     @map("new_values")
+  createdAt  DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  user       User?     @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// VALIDATION ENGINE
+// Severity: ERROR | WARNING | INFO (aligned with EBA ITS)
+// ─────────────────────────────────────────────────────────────
+
+model ValidationRule {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateName String  @map("template_name") @db.VarChar(100)
+  fieldName    String  @map("field_name") @db.VarChar(100)
+  ruleType     String  @map("rule_type") @db.VarChar(50)
+  ruleValue    String? @map("rule_value")
+  errorMessage String? @map("error_message")
+  severity     String  @default("ERROR") @db.VarChar(10)
+  doraArticle  String? @map("dora_article") @db.VarChar(255)
+  isActive     Boolean @default(true) @map("is_active")
+
+  @@map("validation_rules")
+}
+
+/// Stores flags/issues raised by Analysts on specific records.
+model ValidationIssue {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String    @map("tenant_id") @db.Uuid
+  runId                String?   @map("run_id") @db.Uuid
+  ruleId               String    @map("rule_id") @db.Uuid
+  recordId             String    @map("record_id") @db.Uuid
+  tableName            String    @map("table_name") @db.VarChar(100)
+  fieldName            String?   @map("field_name") @db.VarChar(100) // Which specific field triggered this error
+  analystMessage       String?   @map("analyst_message") @db.Text
+  editorResolutionNote String?   @map("editor_resolution_note") @db.Text
+  flaggedBy            String?   @map("flagged_by") @db.Uuid // Analyst userId
+  fixedBy              String?   @map("fixed_by") @db.Uuid // Editor userId  
+  fixedAt              DateTime? @map("fixed_at") @db.Timestamp(6) // When Editor marked fixed
+  // Lifecycle: OPEN → FLAGGED → FIXED → VERIFIED (set automatically by engine on next run)
+  status               String    @default("OPEN") @db.VarChar(30)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  resolvedAt           DateTime? @map("resolved_at") @db.Timestamp(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId], map: "idx_validation_issue_tenant")
+  @@index([recordId], map: "idx_validation_issue_record")
+  @@map("validation_issues")
+}
+
+/// Persisted record of every validation run executed for a tenant.
+model ValidationRun {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  executedAt         DateTime @default(now()) @map("executed_at") @db.Timestamp(6)
+  totalErrors        Int      @default(0) @map("total_errors")
+  totalWarnings      Int      @default(0) @map("total_warnings")
+  totalInfo          Int      @default(0) @map("total_info")
+  // Transparency counters
+  totalRulesExecuted Int      @default(0) @map("total_rules_executed")
+  totalFieldsChecked Int      @default(0) @map("total_fields_checked")
+  totalFieldsPassing Int      @default(0) @map("total_fields_passing")
+  // DORA Score: (totalFieldsPassing / totalFieldsChecked) × 100
+  doraScore          Float    @default(100) @map("dora_score")
+  // Category breakdown JSON: { missingData, logicalErrors, formatErrors, regulatoryGaps }
+  categorySummary    Json     @default("{}") @map("category_summary")
+  results            Json     @map("results")
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId], map: "idx_validation_run_tenant")
+  @@map("validation_runs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CORE DOMAIN — FINANCIAL ENTITIES
+// ─────────────────────────────────────────────────────────────
+
+model FinancialEntity {
+  id                      String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String                   @map("tenant_id") @db.Uuid
+  lei                     String                   @unique @db.Char(20)
+  name                    String                   @db.VarChar(255)
+  country                 String?                  @db.Char(2)
+  entityTypeId            Int?                     @map("entity_type_id")
+  parentEntityId          String?                  @map("parent_entity_id") @db.Uuid
+  totalAssets             Decimal?                 @map("total_assets") @db.Decimal
+  currency                String?                  @db.Char(3)
+  integrationDate         DateTime?                @map("integration_date") @db.Date
+  deletionDate            DateTime?                @map("deletion_date") @db.Date
+  createdAt               DateTime?                @default(now()) @map("created_at") @db.Timestamp(6)
+  branches                Branch[]
+  businessFunctions       BusinessFunction[]
+  contractualArrangements ContractualArrangement[]
+  contractEntities        ContractEntity[]
+  entitiesUsingServices   EntitiesUsingService[]
+  countryRef              Country?                 @relation(fields: [country], references: [code])
+  currencyRef             Currency?                @relation(fields: [currency], references: [code])
+  entityType              EntityType?              @relation(fields: [entityTypeId], references: [id])
+  parentEntity            FinancialEntity?         @relation("EntityHierarchy", fields: [parentEntityId], references: [id])
+  childEntities           FinancialEntity[]        @relation("EntityHierarchy")
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId], map: "idx_financial_entities_tenant")
+  @@map("financial_entities")
+}
+
+model Branch {
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String                 @map("tenant_id") @db.Uuid
+  financialEntityId     String                 @map("financial_entity_id") @db.Uuid
+  branchCode            String?                @map("branch_code") @db.VarChar(100)
+  name                  String                 @db.VarChar(255)
+  country               String?                @db.Char(2)
+  countryRef            Country?               @relation(fields: [country], references: [code])
+  financialEntity       FinancialEntity        @relation(fields: [financialEntityId], references: [id])
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  entitiesUsingServices EntitiesUsingService[]
+
+  @@map("branches")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CORE DOMAIN — ICT PROVIDERS
+// DORA Art. 28§1 — EBA RT.03
+// Phase 1.5: Added LEI, NACE, ultimate parent LEI, intra-group flag, competent authority
+// ─────────────────────────────────────────────────────────────
+
+model IctProvider {
+  id                        String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                  String                   @map("tenant_id") @db.Uuid
+  providerCode              String                   @unique @map("provider_code") @db.VarChar(255)
+  legalName                 String?                  @map("legal_name") @db.VarChar(255)
+  latinName                 String?                  @map("latin_name") @db.VarChar(255)
+  personTypeId              Int?                     @map("person_type_id")
+  headquartersCountry       String?                  @map("headquarters_country") @db.Char(2)
+  parentProviderId          String?                  @map("parent_provider_id") @db.Uuid
+  annualCost                Decimal?                 @map("annual_cost") @db.Decimal
+  currency                  String?                  @db.Char(3)
+  createdAt                 DateTime?                @default(now()) @map("created_at") @db.Timestamp(6)
+  // DORA-required fields (EBA RT.03) — added Phase 1.5
+  lei                       String?                  @db.Char(20)
+  naceCode                  String?                  @map("nace_code") @db.VarChar(10)
+  ultimateParentLei         String?                  @map("ultimate_parent_lei") @db.Char(20)
+  intraGroupFlag            Boolean?                 @default(false) @map("intra_group_flag")
+  competentAuthority        String?                  @map("competent_authority") @db.VarChar(255)
+  // Relations
+  contractualArrangements   ContractualArrangement[] @relation("PrimaryProvider")
+  subcontractedArrangements ContractualArrangement[] @relation("SubcontractorProvider")
+  contractProviders         ContractProvider[]
+  currencyRef               Currency?                @relation(fields: [currency], references: [code])
+  headquartersRef           Country?                 @relation(fields: [headquartersCountry], references: [code])
+  parentProvider            IctProvider?             @relation("ProviderHierarchy", fields: [parentProviderId], references: [id])
+  childProviders            IctProvider[]            @relation("ProviderHierarchy")
+  personType                ProviderPersonType?      @relation(fields: [personTypeId], references: [id])
+  tenant                    Tenant                   @relation(fields: [tenantId], references: [id])
+  serviceAssessments        IctServiceAssessment[]
+  ictServices               IctService[]
+  supplyChains              IctSupplyChain[]         @relation("MainProvider")
+  fallbackForStrategies     ExitStrategy[]           @relation("FallbackProvider")
+
+  @@index([headquartersCountry], map: "idx_provider_country")
+  @@index([tenantId], map: "idx_provider_tenant")
+  @@map("ict_providers")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CORE DOMAIN — CONTRACTUAL ARRANGEMENTS
+// Central hub — DORA Art. 28§2, Art. 30 — EBA RT.02
+// ─────────────────────────────────────────────────────────────
+
+model ContractualArrangement {
+  id                      String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String                  @map("tenant_id") @db.Uuid
+  contractReference       String                  @unique @map("contract_reference") @db.VarChar(255)
+  financialEntityId       String                  @map("financial_entity_id") @db.Uuid
+  providerId              String                  @map("provider_id") @db.Uuid
+  ictServiceTypeId        Int?                    @map("ict_service_type_id")
+  contractType            String?                 @map("contract_type") @db.VarChar(100)
+  serviceDescription      String?                 @map("service_description")
+  startDate               DateTime?               @map("start_date") @db.Date
+  endDate                 DateTime?               @map("end_date") @db.Date
+  governingLawCountry     String?                 @map("governing_law_country") @db.Char(2)
+  serviceCountry          String?                 @map("service_country") @db.Char(2)
+  providedByContractor    Boolean?                @default(true) @map("provided_by_contractor")
+  providedBySubcontractor Boolean?                @default(false) @map("provided_by_subcontractor")
+  subcontractorProviderId String?                 @map("subcontractor_provider_id") @db.Uuid
+  dataStorage             Boolean?                @map("data_storage")
+  storageLocation         String?                 @map("storage_location") @db.Char(2)
+  processingLocation      String?                 @map("processing_location") @db.Char(2)
+  dataSensitivityId       Int?                    @map("data_sensitivity_id")
+  relianceLevelId         Int?                    @map("reliance_level_id")
+  terminationNoticePeriod Int?                    @map("termination_notice_period")
+  renewalTerms            String?                 @map("renewal_terms")
+  annualCost              Decimal?                @map("annual_cost") @db.Decimal(20, 2)
+  currency                String?                 @map("currency") @db.Char(3)
+  createdAt               DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
+  // Relations
+  dataSensitivity         DataSensitivityLevel?   @relation(fields: [dataSensitivityId], references: [id])
+  financialEntity         FinancialEntity         @relation(fields: [financialEntityId], references: [id])
+  governingLawRef         Country?                @relation("GovLawCountry", fields: [governingLawCountry], references: [code])
+  ictServiceType          IctServiceType?         @relation(fields: [ictServiceTypeId], references: [id])
+  processingRef           Country?                @relation("ProcCountry", fields: [processingLocation], references: [code])
+  provider                IctProvider             @relation("PrimaryProvider", fields: [providerId], references: [id])
+  relianceLevel           RelianceLevel?          @relation(fields: [relianceLevelId], references: [id])
+  serviceCountryRef       Country?                @relation("SvcCountry", fields: [serviceCountry], references: [code])
+  storageRef              Country?                @relation("StorageCountry", fields: [storageLocation], references: [code])
+  subcontractorProvider   IctProvider?            @relation("SubcontractorProvider", fields: [subcontractorProviderId], references: [id])
+  tenant                  Tenant                  @relation(fields: [tenantId], references: [id])
+  ictDependencies         FunctionIctDependency[]
+  serviceAssessments      IctServiceAssessment[]  @relation("ContractAssessments")
+  supplyChains            IctSupplyChain[]
+  exitStrategies          ExitStrategy[]
+  contractEntities        ContractEntity[]
+  contractProviders       ContractProvider[]
+  entitiesUsingServices   EntitiesUsingService[]
+
+  @@index([financialEntityId], map: "idx_contract_entity")
+  @@index([providerId], map: "idx_contract_provider")
+  @@index([tenantId], map: "idx_contract_tenant")
+  @@map("contractual_arrangements")
+}
+
+// ─────────────────────────────────────────────────────────────
+// JUNCTION — Group-Level Contract Coverage (DORA Art. 29)
+// ContractEntity: one contract → multiple financial entities (group)
+// ContractProvider: one contract → multiple providers
+// Phase 1.5: Wired Prisma relations — no module yet (Phase 2.5)
+// ─────────────────────────────────────────────────────────────
+
+model ContractEntity {
+  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId        String                 @map("contract_id") @db.Uuid
+  financialEntityId String                 @map("financial_entity_id") @db.Uuid
+  contract          ContractualArrangement @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  financialEntity   FinancialEntity        @relation(fields: [financialEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, financialEntityId])
+  @@map("contract_entities")
+}
+
+model ContractProvider {
+  id         String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId String                 @map("contract_id") @db.Uuid
+  providerId String                 @map("provider_id") @db.Uuid
+  contract   ContractualArrangement @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  provider   IctProvider            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, providerId])
+  @@map("contract_providers")
+}
+
+model ExitStrategyService {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exitStrategyId String       @map("exit_strategy_id") @db.Uuid
+  serviceId      String       @map("service_id") @db.Uuid
+  exitStrategy   ExitStrategy @relation(fields: [exitStrategyId], references: [id], onDelete: Cascade)
+  service        IctService   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([exitStrategyId, serviceId])
+  @@map("exit_strategy_services")
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMMUNICATION — DORA Role Collaboration
+// Polymorphic comments for cross-role entity annotations.
+// ─────────────────────────────────────────────────────────────
+
+model Comment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(50) // e.g., "IctProvider", "ContractualArrangement", "ValidationRun"
+  entityId   String   @map("entity_id") @db.Uuid
+  authorId   String   @map("author_id") @db.Uuid
+  content    String   @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entityType, entityId], map: "idx_comments_entity")
+  @@map("comments")
+}
+
+// ─────────────────────────────────────────────────────────────
+// CORE DOMAIN — BUSINESS FUNCTIONS
+// DORA Art. 28§4 — EBA RT.04
+// ─────────────────────────────────────────────────────────────
+
+model BusinessFunction {
+  id                    String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String                  @map("tenant_id") @db.Uuid
+  functionIdentifier    String                  @unique @map("function_identifier") @db.VarChar(100)
+  financialEntityId     String                  @map("financial_entity_id") @db.Uuid
+  functionName          String                  @map("function_name") @db.VarChar(255)
+  licensedActivity      String?                 @map("licensed_activity") @db.VarChar(255)
+  criticalityLevelId    Int?                    @map("criticality_level_id")
+  criticalityReason     String?                 @map("criticality_reason")
+  lastAssessmentDate    DateTime?               @map("last_assessment_date") @db.Date
+  rto                   Int?
+  rpo                   Int?
+  impactDiscontinuation String?                 @map("impact_discontinuation")
+  criticalityLevel      CriticalityLevel?       @relation(fields: [criticalityLevelId], references: [id])
+  financialEntity       FinancialEntity         @relation(fields: [financialEntityId], references: [id])
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id])
+  ictDependencies       FunctionIctDependency[]
+
+  @@index([financialEntityId], map: "idx_business_function_entity")
+  @@index([tenantId], map: "idx_business_function_tenant")
+  @@map("business_functions")
+}
+
+model FunctionIctDependency {
+  id                     String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  functionId             String                 @map("function_id") @db.Uuid
+  contractId             String                 @map("contract_id") @db.Uuid
+  contractualArrangement ContractualArrangement @relation(fields: [contractId], references: [id])
+  businessFunction       BusinessFunction       @relation(fields: [functionId], references: [id])
+
+  @@unique([functionId, contractId])
+  @@map("function_ict_dependencies")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Branch-level service usage — DORA Art. 29
+// Phase 1.5: Added Prisma @relation decorators — no module yet (Phase 2.5)
+// ─────────────────────────────────────────────────────────────
+
+model EntitiesUsingService {
+  id                String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId        String                 @map("contract_id") @db.Uuid
+  financialEntityId String                 @map("financial_entity_id") @db.Uuid
+  branchId          String?                @map("branch_id") @db.Uuid
+  isBranch          Boolean?               @default(false) @map("is_branch")
+  contract          ContractualArrangement @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  financialEntity   FinancialEntity        @relation(fields: [financialEntityId], references: [id], onDelete: Cascade)
+  branch            Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@map("entities_using_services")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ICT SERVICE ABSTRACTION LAYER — EBA RT.05
+// Phase 1.5: Renamed from ict_services to IctService (PascalCase convention)
+// @@map preserves DB table name — no migration needed
+// ─────────────────────────────────────────────────────────────
+
+model IctService {
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String                @map("tenant_id") @db.Uuid
+  providerId         String                @map("provider_id") @db.Uuid
+  serviceName        String                @map("service_name") @db.VarChar(255)
+  serviceDescription String?               @map("service_description")
+  serviceTypeId      Int?                  @map("service_type_id")
+  criticalityLevelId Int?                  @map("criticality_level_id")
+  dataSensitivityId  Int?                  @map("data_sensitivity_id")
+  createdAt          DateTime?             @default(now()) @map("created_at") @db.Timestamp(6)
+  criticalityLevel   CriticalityLevel?     @relation(fields: [criticalityLevelId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dataSensitivity    DataSensitivityLevel? @relation(fields: [dataSensitivityId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  provider           IctProvider           @relation(fields: [providerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  serviceType        IctServiceType?       @relation(fields: [serviceTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  exitStrategies     ExitStrategyService[]
+
+  @@index([providerId], map: "idx_services_provider")
+  @@map("ict_services")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ICT SUPPLY CHAIN — DORA Art. 28§3 — EBA RT.07
+// supply_rank: 1=direct provider, N=N-th party subcontractor
+// ─────────────────────────────────────────────────────────────
+
+model IctSupplyChain {
+  id              String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contractId      String                 @map("contract_id") @db.Uuid
+  providerId      String                 @map("provider_id") @db.Uuid // The subcontractor being added
+  parentChainId   String?                @map("parent_chain_id") @db.Uuid // Who hired them (null = main provider)
+  serviceTypeId   Int?                   @map("service_type_id")
+  supplyRank      Int?                   @map("supply_rank") // Computed depth or stored. Level 1 = parent is null
+
+  contractualArrangement  ContractualArrangement @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  provider        IctProvider            @relation("MainProvider", fields: [providerId], references: [id])
+  parentLink      IctSupplyChain?        @relation("ChainHierarchy", fields: [parentChainId], references: [id], onDelete: Cascade)
+  childLinks      IctSupplyChain[]       @relation("ChainHierarchy")
+  serviceType     IctServiceType?        @relation(fields: [serviceTypeId], references: [id])
+
+  @@index([contractId], map: "idx_supply_contract")
+  @@map("ict_supply_chain")
+}
+
+// ─────────────────────────────────────────────────────────────
+// ICT SERVICE ASSESSMENT — DORA Art. 28§5 — EBA RT.06
+// Phase 1.5: Added direct tenant_id for proper isolation
+// Phase 1.5: Added exitStrategies backrelation
+// ─────────────────────────────────────────────────────────────
+
+model IctServiceAssessment {
+  id                           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                     String?                @map("tenant_id") @db.Uuid
+  contractId                   String                 @map("contract_id") @db.Uuid
+  providerId                   String                 @map("provider_id") @db.Uuid
+  isSubstitutable              Boolean?               @map("is_substitutable")
+  substitutionReason           String?                @map("substitution_reason")
+  lastAuditDate                DateTime?              @map("last_audit_date") @db.Date
+  nextReviewDate               DateTime?              @map("next_review_date") @db.Date
+  exitPlanExists               Boolean?               @map("exit_plan_exists")
+  reintegrationPossible        Boolean?               @map("reintegration_possible")
+  discontinuationImpact        String?                @map("discontinuation_impact")
+  alternativeProvidersExist    Boolean?               @map("alternative_providers_exist")
+  alternativeProviderReference String?                @map("alternative_provider_reference")
+  // Workflow fields
+  triggerReason                String?                @map("trigger_reason")
+  assessmentStatus             String?                @default("ACTIVE") @map("assessment_status")
+  createdAt                    DateTime?              @default(now()) @map("created_at") @db.Timestamp(6)
+  contract                     ContractualArrangement @relation("ContractAssessments", fields: [contractId], references: [id])
+  provider                     IctProvider            @relation(fields: [providerId], references: [id])
+  tenant                       Tenant?                @relation(fields: [tenantId], references: [id])
+  exitStrategies               ExitStrategy[]
+
+  @@index([contractId, providerId], map: "idx_assessment_contract_provider")
+  @@index([tenantId], map: "idx_assessment_tenant")
+  @@map("ict_service_assessments")
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXIT STRATEGIES — DORA Art. 28§5 — EBA RT.08
+// Phase 1.5: Added assessmentId FK to link strategy to assessment
+// Decision: Keep exitPlanExists boolean on IctServiceAssessment as a quick status flag.
+//           ExitStrategy holds the full documented plan.
+//           assessmentId creates the traceability link between flag and plan.
+// ─────────────────────────────────────────────────────────────
+
+model ExitStrategy {
+  id                 String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String                 @map("tenant_id") @db.Uuid
+  contractId         String                 @map("contract_id") @db.Uuid
+  assessmentId       String?                @map("assessment_id") @db.Uuid
+  exitTrigger        String                 @map("exit_trigger")
+  exitStrategy       String                 @map("exit_strategy")
+  fallbackProviderId String?                @map("fallback_provider_id") @db.Uuid
+  createdAt          DateTime?              @default(now()) @map("created_at") @db.Timestamp(6)
+  contract           ContractualArrangement @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  assessment         IctServiceAssessment?  @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+  fallbackProvider   IctProvider?           @relation("FallbackProvider", fields: [fallbackProviderId], references: [id], onDelete: SetNull)
+  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  services           ExitStrategyService[]
+
+  @@index([contractId], map: "idx_exit_strategy_contract")
+  @@map("exit_strategies")
+}

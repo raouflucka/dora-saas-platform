@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dora_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "1234"
+      POSTGRES_DB: DORA_DB
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - dora_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d DORA_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dora_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:1234@postgres:5432/DORA_DB?schema=public
+      - JWT_SECRET=${JWT_SECRET:-dora-super-secret-jwt-key-change-in-prod}
+      - PORT=3000
+      - NODE_ENV=development
+    ports:
+      - "3000:3000"
+    networks:
+      - dora_network
+
+  frontend:
+    image: node:22-alpine
+    container_name: dora_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:3000/api/v1
+    command: npm run dev -- --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - backend
+    networks:
+      - dora_network
+
+  prisma-studio:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dora_prisma_studio
+    command: npx prisma studio --port 51212 --browser none
+    ports:
+      - "51212:51212"
+    environment:
+      - DATABASE_URL=postgresql://postgres:1234@postgres:5432/DORA_DB?schema=public
+    networks:
+      - dora_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
+networks:
+  dora_network:
+    driver: bridge
