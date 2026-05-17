@@ -1,4 +1,4 @@
-# DORA SaaS Platform
+# DORA Hub Platform
 
 Enterprise-grade SaaS architecture for the DORA (Digital Operational Resilience Act) risk analysis platform.
 
